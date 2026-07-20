@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import Callable
 from typing import Any
@@ -26,6 +27,8 @@ from .exceptions import (
     HyundaiKiaVehicleError,
 )
 from .models import EntityValue, TokenResponse, VehicleProfile
+
+_LOGGER = logging.getLogger(__name__)
 
 RefreshTokenCallback = Callable[[str], None]
 
@@ -73,6 +76,17 @@ TIME_TO_MINUTES = {
 }
 CHARGER_TYPES = {0: "not_connected", 1: "fast", 2: "normal"}
 VEHICLE_AUTH_ERROR_CODES = {"4011", "4012", "4016"}
+# 차량이 존재하지만 일시적으로 데이터를 제공할 수 없는 비치명적 에러 코드
+# (장기 미운행, 단말 전송 오류, 서비스 미지원 차량 등)
+# 관련 파일: config_flow.py (async_step_vehicle_name → async_validate_vehicle)
+VEHICLE_NONFATAL_ERROR_CODES = {
+    "4045",  # No data: 장기 미운행 또는 단말 데이터 전송 오류
+    "4041",  # Unregistered Device: CCS 미가입 차량
+    "5032",  # Service Unavailable: 데이터 조회 불가 차량
+    "5003",  # Service Provider Error: 연동 서비스 오류
+    "5004",  # Internal Server Permission Error
+    "5041",  # Gateway Timeout
+}
 
 
 class HyundaiKiaApiClient:
@@ -192,11 +206,31 @@ class HyundaiKiaApiClient:
         return self._parse_endpoint(endpoint, payload)
 
     async def async_validate_vehicle(self, car_id: str) -> None:
-        """Validate a car ID using the two universally supported metrics."""
+        """Validate a car ID; non-fatal data-unavailability errors are tolerated.
+
+        carlist에서 이미 차량이 확인된 경우, DTE/Odometer 엔드포인트가
+        일시적 데이터 부재(4045, 5032 등) 에러를 반환해도 설정을 계속할 수 있음.
+        """
         await asyncio.gather(
-            self.async_get_endpoint(car_id, EndpointKey.DISTANCE_TO_EMPTY),
-            self.async_get_endpoint(car_id, EndpointKey.ODOMETER),
+            self._async_check_endpoint(car_id, EndpointKey.DISTANCE_TO_EMPTY),
+            self._async_check_endpoint(car_id, EndpointKey.ODOMETER),
         )
+
+    async def _async_check_endpoint(self, car_id: str, endpoint: EndpointKey) -> None:
+        """엔드포인트 도달 가능 여부를 확인하되, 비치명적 데이터 에러는 허용한다."""
+        path = ENDPOINT_PATHS[endpoint].format(car_id=car_id)
+        url = f"{BRAND_ENDPOINTS[self.brand].vehicle_base}{path}"
+        status, payload = await self._async_authenticated_json(url)
+        error_code = self._error_code(payload)
+        if error_code in VEHICLE_NONFATAL_ERROR_CODES:
+            _LOGGER.warning(
+                "차량 ••••%s %s 엔드포인트: errCode=%s (일시적 데이터 부재, 설정 계속)",
+                car_id[-4:],
+                endpoint.value,
+                error_code,
+            )
+            return
+        self._raise_for_api_error(status, error_code, endpoint.value)
 
     def _access_token_is_valid(self) -> bool:
         """Return whether the in-memory access token has adequate lifetime."""
@@ -318,19 +352,31 @@ class HyundaiKiaApiClient:
     def _raise_for_api_error(status: int, error_code: str, operation: str) -> None:
         """Classify a vehicle API error without exposing response contents."""
         if error_code in VEHICLE_AUTH_ERROR_CODES:
+            _LOGGER.debug(
+                "%s 인증 에러: errCode=%s (HTTP %d)", operation, error_code, status
+            )
             raise HyundaiKiaAuthenticationError(
                 f"{operation} request was rejected ({error_code})"
             )
         if status < 400:
             if error_code != "unknown":
+                _LOGGER.debug(
+                    "%s API 에러: errCode=%s (HTTP %d)", operation, error_code, status
+                )
                 raise HyundaiKiaVehicleError(
                     f"{operation} request was rejected ({error_code})"
                 )
             return
         if status in (401, 403):
+            _LOGGER.debug(
+                "%s 인증 거부: HTTP %d errCode=%s", operation, status, error_code
+            )
             raise HyundaiKiaAuthenticationError(
                 f"{operation} request was rejected ({error_code})"
             )
+        _LOGGER.debug(
+            "%s HTTP 에러: HTTP %d errCode=%s", operation, status, error_code
+        )
         raise HyundaiKiaVehicleError(f"{operation} request returned HTTP {status}")
 
     @classmethod
