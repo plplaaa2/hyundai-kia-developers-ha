@@ -30,7 +30,8 @@
         "title": "Name the vehicle",
         "description": "Choose a Home Assistant name for {vehicle}.",
         "data": {
-          "car_name": "Vehicle name"
+          "car_name": "Vehicle name",
+          "android_auto_entity": "Android Auto connection sensor"
         }
       },
       "vehicle_discovery_failed": {
@@ -54,7 +55,8 @@
         "description": "Use this fallback only when automatic vehicle discovery is unavailable.",
         "data": {
           "car_name": "Vehicle name",
-          "car_id": "Car ID"
+          "car_id": "Car ID",
+          "android_auto_entity": "Android Auto connection sensor"
         }
       },
       "reauth_confirm": {
@@ -118,7 +120,8 @@
           "title": "Name the vehicle",
           "description": "Choose a Home Assistant name for {vehicle}.",
           "data": {
-            "car_name": "Vehicle name"
+            "car_name": "Vehicle name",
+            "android_auto_entity": "Android Auto connection sensor"
           }
         },
         "vehicle_discovery_failed": {
@@ -149,7 +152,8 @@
           "title": "Rename vehicle",
           "description": "Renaming preserves its device and entity identities. Remove and add the vehicle to replace it.",
           "data": {
-            "car_name": "Vehicle name"
+            "car_name": "Vehicle name",
+            "android_auto_entity": "Android Auto connection sensor"
           }
         }
       },
@@ -182,7 +186,22 @@
         }
       },
       "target_state_of_charge": { "name": "Target state of charge" },
-      "remaining_charging_time": { "name": "Remaining charging time" }
+      "remaining_charging_time": { "name": "Remaining charging time" },
+      "vehicle_type": { "name": "Vehicle type" },
+      "model_name": { "name": "Model name" },
+      "connected_service_subscribe_date": {
+        "name": "Connected service subscription date"
+      },
+      "connected_service_end_date": {
+        "name": "Connected service free end date"
+      },
+      "connected_service_end_d_day": {
+        "name": "Connected service free end D-day"
+      },
+      "error_message": { "name": "Error code" },
+      "last_sensor_value_sent_at": {
+        "name": "Last sensor value sent at"
+      }
     },
     "binary_sensor": {
       "charging": { "name": "Charging" },
@@ -194,6 +213,11 @@
       "washer_fluid_warning": { "name": "Washer fluid warning" },
       "brake_fluid_warning": { "name": "Brake fluid warning" },
       "engine_oil_warning": { "name": "Engine oil warning" }
+    },
+    "button": {
+      "refresh": {
+        "name": "Refresh data"
+      }
     }
   },
   "exceptions": {

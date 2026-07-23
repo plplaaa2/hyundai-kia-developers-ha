@@ -7,6 +7,7 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlencode
 
@@ -37,6 +38,7 @@ ENDPOINT_PATHS: dict[EndpointKey, str] = {
     EndpointKey.ODOMETER: "/api/v1/car/status/{car_id}/odometer",
     EndpointKey.EV_BATTERY: "/api/v1/car/status/{car_id}/ev/battery",
     EndpointKey.EV_CHARGING: "/api/v1/car/status/{car_id}/ev/charging",
+    EndpointKey.CONNECTED_SERVICE_CONTRACT: "/api/v1/car/profile/{car_id}/contract",
     EndpointKey.LOW_FUEL_WARNING: "/api/v1/car/status/warning/{car_id}/lowFuel",
     EndpointKey.TIRE_PRESSURE_WARNING: (
         "/api/v1/car/status/warning/{car_id}/tirePressure"
@@ -76,16 +78,48 @@ TIME_TO_MINUTES = {
 }
 CHARGER_TYPES = {0: "not_connected", 1: "fast", 2: "normal"}
 VEHICLE_AUTH_ERROR_CODES = {"4011", "4012", "4016"}
-# 차량이 존재하지만 일시적으로 데이터를 제공할 수 없는 비치명적 에러 코드
-# (장기 미운행, 단말 전송 오류, 서비스 미지원 차량 등)
-# 관련 파일: config_flow.py (async_step_vehicle_name → async_validate_vehicle)
 VEHICLE_NONFATAL_ERROR_CODES = {
-    "4045",  # No data: 장기 미운행 또는 단말 데이터 전송 오류
-    "4041",  # Unregistered Device: CCS 미가입 차량
-    "5032",  # Service Unavailable: 데이터 조회 불가 차량
-    "5003",  # Service Provider Error: 연동 서비스 오류
-    "5004",  # Internal Server Permission Error
-    "5041",  # Gateway Timeout
+    "4002",
+    "4014",
+    "4041",
+    "4043",
+    "4045",
+    "4046",
+    "4120",
+    "5001",
+    "5003",
+    "5004",
+    "5005",
+    "5006",
+    "5007",
+    "5008",
+    "5031",
+    "5032",
+    "5041",
+    "9999",
+}
+
+API_ERROR_MESSAGES = {
+    "4002": "Invalid Request Body",
+    "4011": "Invalid Authorization Header",
+    "4012": "Invalid Session",
+    "4014": "No Service term",
+    "4016": "Unauthorized Client",
+    "4043": "Unregistered User",
+    "4045": "No data",
+    "4046": "No Registered Vehicles",
+    "4120": "Pre-operation is required",
+    "5001": "Internal Server Error",
+    "5003": "Service Provider Error",
+    "5004": "Internal Server Permission Error",
+    "5005": "No Agreement Error",
+    "5006": "No Permission Error",
+    "5007": "Service not registered Error",
+    "5008": "Service not defined Error",
+    "5031": "Unavailable remote control",
+    "5032": "Service Unavailable",
+    "5041": "Gateway Timeout",
+    "9999": "Undefined Error",
 }
 
 
@@ -168,10 +202,10 @@ class HyundaiKiaApiClient:
         """Return vehicles authorized for this account."""
         url = f"{BRAND_ENDPOINTS[self.brand].vehicle_base}/api/v1/car/profile/carlist"
         status, payload = await self._async_authenticated_json(url)
-        error_code = self._error_code(payload)
-        if error_code == "4045":
+        error_code, error_message = self._error_details(payload)
+        if error_code in {"4045", "4046"}:
             return []
-        self._raise_for_api_error(status, error_code, "Vehicle list")
+        self._raise_for_api_error_details(status, error_code, error_message, "Vehicle list")
 
         cars = payload.get("cars")
         if not isinstance(cars, list):
@@ -202,7 +236,8 @@ class HyundaiKiaApiClient:
         path = ENDPOINT_PATHS[endpoint].format(car_id=car_id)
         url = f"{BRAND_ENDPOINTS[self.brand].vehicle_base}{path}"
         status, payload = await self._async_authenticated_json(url)
-        self._raise_for_api_error(status, self._error_code(payload), endpoint.value)
+        error_code, error_message = self._error_details(payload)
+        self._raise_for_api_error_details(status, error_code, error_message, endpoint.value)
         return self._parse_endpoint(endpoint, payload)
 
     async def async_validate_vehicle(self, car_id: str) -> None:
@@ -221,16 +256,17 @@ class HyundaiKiaApiClient:
         path = ENDPOINT_PATHS[endpoint].format(car_id=car_id)
         url = f"{BRAND_ENDPOINTS[self.brand].vehicle_base}{path}"
         status, payload = await self._async_authenticated_json(url)
-        error_code = self._error_code(payload)
+        error_code, error_message = self._error_details(payload)
         if error_code in VEHICLE_NONFATAL_ERROR_CODES:
             _LOGGER.warning(
-                "차량 ••••%s %s 엔드포인트: errCode=%s (일시적 데이터 부재, 설정 계속)",
+                "차량 ••••%s %s 엔드포인트: errCode=%s errMsg=%s (일시적 데이터 부재, 설정 계속)",
                 car_id[-4:],
                 endpoint.value,
                 error_code,
+                error_message or API_ERROR_MESSAGES.get(error_code, ""),
             )
             return
-        self._raise_for_api_error(status, error_code, endpoint.value)
+        self._raise_for_api_error_details(status, error_code, error_message, endpoint.value)
 
     def _access_token_is_valid(self) -> bool:
         """Return whether the in-memory access token has adequate lifetime."""
@@ -268,11 +304,13 @@ class HyundaiKiaApiClient:
             raise HyundaiKiaConnectionError("OAuth token request failed") from err
 
         payload = await self._async_json(response)
-        error_code = self._error_code(payload)
+        error_code, error_message = self._error_details(payload)
         if response.status >= 400:
             if response.status in (400, 401, 403) or error_code == "4002":
                 raise HyundaiKiaAuthenticationError(
-                    f"OAuth token request was rejected ({error_code})"
+                    f"OAuth token request was rejected ({error_code})",
+                    error_code,
+                    error_message,
                 )
             if response.status == 429:
                 raise HyundaiKiaRateLimitError("OAuth token rate limit reached")
@@ -346,6 +384,78 @@ class HyundaiKiaApiClient:
                 "errCode",
                 payload.get("resCode", payload.get("error", "unknown")),
             )
+        )
+
+    @staticmethod
+    def _error_message(payload: dict[str, Any]) -> str:
+        """Return a provider error message across known response variants."""
+        message = payload.get("errMsg", payload.get("resMsg", payload.get("message", "")))
+        return str(message).strip() if message is not None else ""
+
+    @classmethod
+    def _error_details(cls, payload: dict[str, Any]) -> tuple[str, str]:
+        """Return the provider error code and message."""
+        error_code = cls._error_code(payload)
+        error_message = cls._error_message(payload) or API_ERROR_MESSAGES.get(error_code, "")
+        return error_code, error_message
+
+    @staticmethod
+    def _raise_for_api_error_details(
+        status: int, error_code: str, error_message: str, operation: str
+    ) -> None:
+        """Classify a vehicle API error while keeping metadata for diagnostics."""
+        if error_code in VEHICLE_AUTH_ERROR_CODES:
+            _LOGGER.debug(
+                "%s 인증 에러: errCode=%s errMsg=%s (HTTP %d)",
+                operation,
+                error_code,
+                error_message,
+                status,
+            )
+            raise HyundaiKiaAuthenticationError(
+                f"{operation} request was rejected ({error_code})",
+                error_code,
+                error_message,
+            )
+        if status < 400:
+            if error_code != "unknown":
+                _LOGGER.debug(
+                    "%s API 에러: errCode=%s errMsg=%s (HTTP %d)",
+                    operation,
+                    error_code,
+                    error_message,
+                    status,
+                )
+                raise HyundaiKiaVehicleError(
+                    f"{operation} request was rejected ({error_code})",
+                    error_code,
+                    error_message,
+                )
+            return
+        if status in (401, 403):
+            _LOGGER.debug(
+                "%s 인증 거부: HTTP %d errCode=%s errMsg=%s",
+                operation,
+                status,
+                error_code,
+                error_message,
+            )
+            raise HyundaiKiaAuthenticationError(
+                f"{operation} request was rejected ({error_code})",
+                error_code,
+                error_message,
+            )
+        _LOGGER.debug(
+            "%s HTTP 에러: HTTP %d errCode=%s errMsg=%s",
+            operation,
+            status,
+            error_code,
+            error_message,
+        )
+        raise HyundaiKiaVehicleError(
+            f"{operation} request returned HTTP {status}",
+            error_code,
+            error_message,
         )
 
     @staticmethod
@@ -455,6 +565,24 @@ class HyundaiKiaApiClient:
                     )
                 return values
 
+            if endpoint is EndpointKey.CONNECTED_SERVICE_CONTRACT:
+                subscribe_date = cls._parse_yyyymmdd(payload["subscribeDate"])
+                values = {
+                    EntityKey.CONNECTED_SERVICE_SUBSCRIBE_DATE: EntityValue(
+                        subscribe_date
+                    )
+                }
+                end_date_value = str(payload.get("endDate", "")).strip()
+                if end_date_value:
+                    end_date = cls._parse_yyyymmdd(end_date_value)
+                    values[EntityKey.CONNECTED_SERVICE_END_DATE] = EntityValue(
+                        end_date
+                    )
+                    values[EntityKey.CONNECTED_SERVICE_END_D_DAY] = EntityValue(
+                        (end_date - date.today()).days
+                    )
+                return values
+
             entity_key = WARNING_ENTITY_KEYS[endpoint]
             return {entity_key: EntityValue(bool(payload["status"]))}
         except (KeyError, TypeError, ValueError, IndexError) as err:
@@ -471,3 +599,8 @@ class HyundaiKiaApiClient:
     def _timestamp(payload: dict[str, Any]) -> str | None:
         """Return an optional vehicle timestamp."""
         return str(payload.get("timestamp", "")) or None
+
+    @staticmethod
+    def _parse_yyyymmdd(value: Any) -> date:
+        """Parse a documented YYYYMMDD date value."""
+        return datetime.strptime(str(value), "%Y%m%d").date()

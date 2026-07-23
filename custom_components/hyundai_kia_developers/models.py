@@ -1,6 +1,7 @@
 """Data models for Hyundai Kia Developers."""
 
 from dataclasses import dataclass
+from datetime import date
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
@@ -38,7 +39,7 @@ class VehicleProfile:
         return self.nickname or self.sales_model or self.model_code or "Vehicle"
 
 
-type VehicleStateValue = float | bool | str
+type VehicleStateValue = date | float | bool | int | str
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +57,8 @@ class EntityResult:
     key: EntityKey
     value: EntityValue | None
     error: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
 
 
 @dataclass(slots=True)
@@ -65,7 +68,7 @@ class HyundaiKiaRuntimeData:
     api: "HyundaiKiaApiClient"
     coordinator: "HyundaiKiaDataUpdateCoordinator"
     vehicle_profiles: dict[str, VehicleProfile]
-    subentry_snapshot: tuple[tuple[str, str, str], ...]
+    subentry_snapshot: tuple[tuple[str, str, str, str], ...]
 
 
 type HyundaiKiaConfigEntry = ConfigEntry[HyundaiKiaRuntimeData]
