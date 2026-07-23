@@ -1,0 +1,52 @@
+# Local development instructions and workspace metadata
+.agents/
+.codex/
+caution.jsonl
+changelog.jsonl
+
+# Local backups and generated copies
+backup/
+
+# Python cache and tooling output
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments and local environment files
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Home Assistant local runtime files
+.storage/
+home-assistant.log*
+home-assistant_v2.db*
+secrets.yaml
+configuration.yaml
+
+# Local credentials and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*secret*
+*credential*
+
+# Operating system and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
