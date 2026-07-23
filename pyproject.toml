@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hyundai-kia-developers-ha"
+version = "0.2.2"
+description = "Home Assistant custom integration for Korean Hyundai and Kia developer APIs"
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "MIT" }
+authors = [{ name = "mahlernim" }]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.14",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.25",
+  "pytest-cov>=6.0",
+  "pytest-homeassistant-custom-component>=0.13.346",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers --cov=custom_components.hyundai_kia_developers --cov-report=term-missing"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["ASYNC", "B", "E", "F", "I", "LOG", "SIM", "UP"]
+ignore = [
+  "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]

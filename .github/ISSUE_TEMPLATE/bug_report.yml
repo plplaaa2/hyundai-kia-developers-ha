@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a reproducible integration problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a problem. **Do not include Client IDs, Client Secrets, tokens, complete redirect URLs/codes, car IDs, or unredacted logs/diagnostics.** Revoke a credential immediately if it was exposed.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety and prerequisites
+      options:
+        - label: I searched existing issues and tested the latest release.
+          required: true
+        - label: I removed credentials, redirect codes/URLs, tokens, and car IDs from everything attached.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Integration version
+      placeholder: 0.2.2
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      placeholder: 2026.7.0
+    validations:
+      required: true
+  - type: dropdown
+    id: brand
+    attributes:
+      label: Brand
+      options: [Hyundai, Kia, Both]
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe expected and actual behavior without account-identifying data.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics or logs (optional)
+      description: If available, attach redacted Home Assistant diagnostics or a short redacted log excerpt. Never paste credentials, redirect codes, tokens, or car IDs.
+      render: text
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

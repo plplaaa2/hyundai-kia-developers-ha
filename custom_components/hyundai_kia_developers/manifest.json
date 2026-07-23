@@ -1,0 +1,12 @@
+{
+  "domain": "hyundai_kia_developers",
+  "name": "Hyundai Kia Developers",
+  "codeowners": ["@mahlernim"],
+  "config_flow": true,
+  "documentation": "https://github.com/mahlernim/hyundai-kia-developers-ha",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/mahlernim/hyundai-kia-developers-ha/issues",
+  "requirements": [],
+  "version": "0.2.2"
+}

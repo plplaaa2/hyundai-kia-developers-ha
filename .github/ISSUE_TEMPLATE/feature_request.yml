@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest a focused improvement
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, tokens, OAuth redirect URLs/codes, car IDs, or other private account data.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I searched existing issues for this request.
+          required: true
+        - label: This request does not contain credentials, redirect codes, tokens, or car IDs.
+          required: true
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case
+      description: What problem would this solve in Home Assistant?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful behavior and any relevant documented API endpoint.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
