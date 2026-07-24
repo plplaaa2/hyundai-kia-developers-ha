@@ -26,6 +26,8 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    EntitySelector,
+    EntitySelectorConfig,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -34,9 +36,11 @@ from homeassistant.helpers.selector import (
 from .api import HyundaiKiaApiClient
 from .const import (
     CONF_ACCOUNT_ID,
+    CONF_ANDROID_AUTO_ENTITY,
     CONF_BRAND,
     CONF_CAR_ID,
     CONF_CAR_NAME,
+    CONF_CAR_MODEL,
     CONF_CAR_TYPE,
     CONF_REDIRECT_URI,
     CONF_REDIRECT_URL,
@@ -50,6 +54,7 @@ from .const import (
     MIN_SCAN_INTERVAL,
     SUBENTRY_TYPE_VEHICLE,
     Brand,
+    vehicle_type_label,
 )
 from .exceptions import (
     HyundaiKiaAuthenticationError,
@@ -174,9 +179,21 @@ def _credentials_schema(
     return vol.Schema(schema)
 
 
-def _vehicle_name_schema(default: str = "") -> vol.Schema:
+def _vehicle_name_schema(
+    default: str = "", android_auto_entity: str | None = None
+) -> vol.Schema:
     """Return the editable vehicle-name schema."""
-    return vol.Schema({vol.Required(CONF_CAR_NAME, default=default): TextSelector()})
+    return vol.Schema(
+        {
+            vol.Required(CONF_CAR_NAME, default=default): TextSelector(),
+            vol.Optional(
+                CONF_ANDROID_AUTO_ENTITY,
+                default=android_auto_entity or "",
+            ): EntitySelector(
+                EntitySelectorConfig(domain="binary_sensor", integration="mobile_app")
+            ),
+        }
+    )
 
 
 def _manual_vehicle_schema(values: Mapping[str, Any] | None = None) -> vol.Schema:
@@ -188,13 +205,19 @@ def _manual_vehicle_schema(values: Mapping[str, Any] | None = None) -> vol.Schem
                 CONF_CAR_NAME, default=values.get(CONF_CAR_NAME, "")
             ): TextSelector(),
             vol.Required(CONF_CAR_ID, default=values.get(CONF_CAR_ID, "")): str,
+            vol.Optional(
+                CONF_ANDROID_AUTO_ENTITY,
+                default=values.get(CONF_ANDROID_AUTO_ENTITY, ""),
+            ): EntitySelector(
+                EntitySelectorConfig(domain="binary_sensor", integration="mobile_app")
+            ),
         }
     )
 
 
 def _vehicle_label(profile: VehicleProfile) -> str:
     """Return a useful, disambiguated selector label."""
-    detail = profile.sales_model or profile.model_code or profile.car_type
+    detail = profile.sales_model or profile.model_code or vehicle_type_label(profile.car_type)
     suffix = profile.car_id[-4:]
     if detail and detail != profile.suggested_name:
         return f"{profile.suggested_name} — {detail} (••••{suffix})"
@@ -331,7 +354,9 @@ class HyundaiKiaConfigFlow(ConfigFlow, domain=DOMAIN):
                     errors["base"] = "invalid_vehicle"
                 else:
                     return await self._create_account_entry(
-                        name, self._selected_vehicle
+                        name,
+                        self._selected_vehicle,
+                        str(user_input.get(CONF_ANDROID_AUTO_ENTITY, "")),
                     )
         return self.async_show_form(
             step_id="vehicle_name",
@@ -391,7 +416,11 @@ class HyundaiKiaConfigFlow(ConfigFlow, domain=DOMAIN):
                     errors["base"] = "invalid_vehicle"
                 else:
                     profile = VehicleProfile(car_id, "", "", "", "")
-                    return await self._create_account_entry(name, profile)
+                    return await self._create_account_entry(
+                        name,
+                        profile,
+                        str(user_input.get(CONF_ANDROID_AUTO_ENTITY, "")),
+                    )
         return self.async_show_form(
             step_id="manual",
             data_schema=_manual_vehicle_schema(user_input),
@@ -559,7 +588,10 @@ class HyundaiKiaConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def _create_account_entry(
-        self, vehicle_name: str, profile: VehicleProfile
+        self,
+        vehicle_name: str,
+        profile: VehicleProfile,
+        android_auto_entity: str = "",
     ) -> ConfigFlowResult:
         """Create the account and its first vehicle atomically."""
         assert self._api and self._token
@@ -571,6 +603,10 @@ class HyundaiKiaConfigFlow(ConfigFlow, domain=DOMAIN):
         car_data: dict[str, str] = {CONF_CAR_ID: profile.car_id}
         if profile.car_type:
             car_data[CONF_CAR_TYPE] = profile.car_type
+        if model_name := (profile.sales_model or profile.model_code):
+            car_data[CONF_CAR_MODEL] = model_name
+        if android_auto_entity:
+            car_data[CONF_ANDROID_AUTO_ENTITY] = android_auto_entity
         return self.async_create_entry(
             title=_next_account_title(self.hass, brand),
             data={
@@ -699,6 +735,16 @@ class VehicleSubentryFlowHandler(ConfigSubentryFlow):
                     data = {CONF_CAR_ID: self._selected_vehicle.car_id}
                     if self._selected_vehicle.car_type:
                         data[CONF_CAR_TYPE] = self._selected_vehicle.car_type
+                    if model_name := (
+                        self._selected_vehicle.sales_model
+                        or self._selected_vehicle.model_code
+                    ):
+                        data[CONF_CAR_MODEL] = model_name
+                    android_auto_entity = str(
+                        user_input.get(CONF_ANDROID_AUTO_ENTITY, "")
+                    )
+                    if android_auto_entity:
+                        data[CONF_ANDROID_AUTO_ENTITY] = android_auto_entity
                     return self.async_create_entry(
                         title=name,
                         data=data,
@@ -766,9 +812,15 @@ class VehicleSubentryFlowHandler(ConfigSubentryFlow):
                 except HyundaiKiaError:
                     errors["base"] = "invalid_vehicle"
                 else:
+                    data = {CONF_CAR_ID: car_id}
+                    android_auto_entity = str(
+                        user_input.get(CONF_ANDROID_AUTO_ENTITY, "")
+                    )
+                    if android_auto_entity:
+                        data[CONF_ANDROID_AUTO_ENTITY] = android_auto_entity
                     return self.async_create_entry(
                         title=name,
-                        data={CONF_CAR_ID: car_id},
+                        data=data,
                         unique_id=unique_id,
                     )
         return self.async_show_form(
@@ -789,10 +841,19 @@ class VehicleSubentryFlowHandler(ConfigSubentryFlow):
             if not name:
                 errors[CONF_CAR_NAME] = "required"
             else:
-                return self.async_update_and_abort(entry, subentry, title=name)
+                data = {
+                    **subentry.data,
+                    CONF_ANDROID_AUTO_ENTITY: str(
+                        user_input.get(CONF_ANDROID_AUTO_ENTITY, "")
+                    ),
+                }
+                return self.async_update_and_abort(entry, subentry, title=name, data=data)
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=_vehicle_name_schema(subentry.title),
+            data_schema=_vehicle_name_schema(
+                subentry.title,
+                str(subentry.data.get(CONF_ANDROID_AUTO_ENTITY, "")),
+            ),
             errors=errors,
         )
 

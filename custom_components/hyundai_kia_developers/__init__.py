@@ -15,6 +15,7 @@ from .api import HyundaiKiaApiClient
 from .const import (
     CONF_BRAND,
     CONF_CAR_ID,
+    CONF_CAR_MODEL,
     CONF_CAR_TYPE,
     CONF_REDIRECT_URI,
     CONF_REFRESH_TOKEN,
@@ -77,11 +78,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: HyundaiKiaConfigEntry) -
     for subentry in entry.subentries.values():
         car_id = str(subentry.data.get(CONF_CAR_ID, ""))
         profile = vehicle_profiles.get(car_id)
-        if profile and profile.car_type != subentry.data.get(CONF_CAR_TYPE):
+        if not profile:
+            continue
+        model_name = profile.sales_model or profile.model_code
+        updates = {}
+        if profile.car_type != subentry.data.get(CONF_CAR_TYPE):
+            updates[CONF_CAR_TYPE] = profile.car_type
+        if model_name and model_name != subentry.data.get(CONF_CAR_MODEL):
+            updates[CONF_CAR_MODEL] = model_name
+        if updates:
             hass.config_entries.async_update_subentry(
                 entry,
                 subentry,
-                data={**subentry.data, CONF_CAR_TYPE: profile.car_type},
+                data={**subentry.data, **updates},
             )
 
     coordinator = HyundaiKiaDataUpdateCoordinator(hass, entry, api, vehicle_profiles)
